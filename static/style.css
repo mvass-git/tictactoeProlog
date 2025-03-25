@@ -1,0 +1,52 @@
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background-color: #f8f8f8;
+    margin: 0;
+    padding: 20px;
+}
+
+.settings {
+    margin-bottom: 20px;
+}
+
+label {
+    display: inline-block;
+    margin: 5px 10px;
+}
+
+#board {
+    display: inline-block;
+    margin-top: 20px;
+}
+
+.row {
+    display: flex;
+}
+
+.cell {
+    width: 50px;
+    height: 50px;
+    border: 1px solid #444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    cursor: pointer;
+    background-color: white;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.cell:hover {
+    background-color: #eee;
+}
+
+.cell:active {
+    background-color: #ddd;
+}
+
+.cell.highlight {
+    background-color: #ffeb3b;
+    font-weight: bold;
+}
