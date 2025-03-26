@@ -315,7 +315,7 @@ evaluate_position(Board, R, C, Player, N, Score) :-
     ?- evaluate_direction([[x,x,empty],[empty,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, x, 3, Score).
        Score = 100.  % Якщо 2 послідовні "x" без блокування.
 */
-evaluate_direction(Board, R, C, DR, DC, Player, N, Score) :-
+evaluate_direction(Board, R, C, DR, DC, Player, _, Score) :-
     count_in_direction(Board, R, C, DR, DC, Player, Count1, Block1),
     count_in_direction(Board, R, C, -DR, -DC, Player, Count2, Block2),
     Total is Count1 + Count2 - 1,
