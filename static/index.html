@@ -1,92 +1,97 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Tic Tac Toe</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            background-color: #f8f8f8;
-            margin: 0;
-            padding: 20px;
-        }
-        .settings {
-            margin-bottom: 20px;
-        }
-        label {
-            display: inline-block;
-            margin: 5px 10px;
-        }
-        #board {
-            display: inline-block;
-            margin-top: 20px;
-        }
-        .row {
-            display: flex;
-        }
-        .cell {
-            width: 50px;
-            height: 50px;
-            border: 1px solid #444;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            cursor: pointer;
-            background-color: white;
-            user-select: none;
-            transition: background-color 0.2s;
-        }
-        .cell:hover {
-            background-color: #eee;
-        }
-        .cell:active {
-            background-color: #ddd;
-        }
-        /* Підсвічування переможної серії */
-        .cell.highlight {
-            background-color: #8f8; /* світло-зелений фон */
-            font-weight: bold;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Tic Tac Toe</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #f8f8f8;
+      margin: 0;
+      padding: 20px;
+    }
+    .settings {
+      margin-bottom: 20px;
+    }
+    label {
+      display: inline-block;
+      margin: 5px 10px;
+    }
+    #board {
+      display: inline-block;
+      margin-top: 20px;
+    }
+    .row {
+      display: flex;
+    }
+    .cell {
+      width: 50px;
+      height: 50px;
+      border: 1px solid #444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      cursor: pointer;
+      background-color: white;
+      user-select: none;
+      transition: background-color 0.2s;
+    }
+    .cell:hover {
+      background-color: #eee;
+    }
+    .cell:active {
+      background-color: #ddd;
+    }
+    /* Highlight winning cells */
+    .cell.highlight {
+      background-color: #8f8; /* light-green */
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
-<h1>Tic Tac Toe</h1>
-<div class="settings">
+  <h1>Tic Tac Toe</h1>
+  <div class="settings">
     <label>Rows: <input type="number" id="rows" value="10" min="3"></label>
     <label>Cols: <input type="number" id="cols" value="10" min="3"></label>
     <label>Win in a row: <input type="number" id="n-to-win" value="5" min="3"></label>
     <label>Mode:
-        <select id="mode">
-            <option value="pvp">Player vs Player</option>
-            <option value="pve">Player vs Bot</option>
-            <option value="bvb">Bot vs Bot</option>
-        </select>
+      <select id="mode">
+        <option value="pvp">Player vs Player</option>
+        <option value="pve">Player vs Bot</option>
+        <option value="bvb">Bot vs Bot</option>
+      </select>
     </label>
-    <!-- Вибір символу гравця використовується лише для режиму pve -->
-    <label>Player Symbol:
+    <!-- Container for player symbol (visible only in pve mode) -->
+    <div id="playerSymbolContainer" style="display: none;">
+      <label>Player Symbol:
         <select id="player-symbol">
-            <option value="X">X</option>
-            <option value="O">O</option>
+          <option value="X">X</option>
+          <option value="O">O</option>
         </select>
-    </label>
-    <label>Bot Delay (ms): <input type="number" id="bot-delay" value="200"></label>
-    <label>Bot Difficulty:
+      </label>
+    </div>
+    <!-- Container for bot options (visible only in modes with bots) -->
+    <div id="botOptionsContainer" style="display: none;">
+      <label>Bot Delay (ms): <input type="number" id="bot-delay" value="200"></label>
+      <label>Bot Difficulty:
         <select id="bot-difficulty">
-            <option value="very easy">Very Easy</option>
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
+          <option value="very easy">Very Easy</option>
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
         </select>
-    </label>
+      </label>
+    </div>
     <button id="start-btn">Start Game</button>
-</div>
+  </div>
 
-<h2 id="turn">Turn: -</h2>
-<div id="board"></div>
+  <h2 id="turn">Turn: -</h2>
+  <div id="board"></div>
 
-<script>
+  <script>
     let gameId = null;
     let rows, cols;
     let mode = null;
@@ -95,108 +100,132 @@
     let refreshInterval = null;
     let winline = [];
 
+    // Update visibility of UI elements based on selected mode.
+    function updateVisibility() {
+      const modeSelect = document.getElementById("mode").value;
+      const playerSymbolContainer = document.getElementById("playerSymbolContainer");
+      const botOptionsContainer = document.getElementById("botOptionsContainer");
+
+      // Show player symbol selection only in pve mode.
+      if (modeSelect === "pve") {
+        playerSymbolContainer.style.display = "inline-block";
+      } else {
+        playerSymbolContainer.style.display = "none";
+      }
+
+      // Show bot options only if mode is pve or bvb.
+      if (modeSelect === "pve" || modeSelect === "bvb") {
+        botOptionsContainer.style.display = "inline-block";
+      } else {
+        botOptionsContainer.style.display = "none";
+      }
+    }
+
+    document.getElementById("mode").addEventListener("change", updateVisibility);
+
     document.getElementById("start-btn").addEventListener("click", async () => {
-        rows = parseInt(document.getElementById("rows").value);
-        cols = parseInt(document.getElementById("cols").value);
-        mode = document.getElementById("mode").value;
-        const botDelay = parseInt(document.getElementById("bot-delay").value);
-        const botDifficulty = document.getElementById("bot-difficulty").value;
-        const nToWin = parseInt(document.getElementById("n-to-win").value);
-        const playerSymbol = document.getElementById("player-symbol").value;
+      rows = parseInt(document.getElementById("rows").value);
+      cols = parseInt(document.getElementById("cols").value);
+      mode = document.getElementById("mode").value;
+      const botDelay = parseInt(document.getElementById("bot-delay").value);
+      const botDifficulty = document.getElementById("bot-difficulty").value;
+      const nToWin = parseInt(document.getElementById("n-to-win").value);
+      const playerSymbol = document.getElementById("player-symbol").value;
 
-        const res = await fetch("/start", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                rows, cols, mode,
-                bot_delay: botDelay,
-                bot_difficulty: botDifficulty,
-                n_to_win: nToWin,
-                player_symbol: playerSymbol
-            })
-        });
+      updateVisibility();
 
-        const data = await res.json();
-        gameId = data.game_id;
-        currentTurn = data.turn;
-        gameOver = false;
-        winline = [];
-        renderBoard(data.board);
-        updateTurn(data.turn);
+      const res = await fetch("/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows, cols, mode,
+          bot_delay: botDelay,
+          bot_difficulty: botDifficulty,
+          n_to_win: nToWin,
+          player_symbol: playerSymbol
+        })
+      });
 
-        if (refreshInterval) clearInterval(refreshInterval);
-        if (mode !== "pvp") {
-            refreshInterval = setInterval(pollGameState, 500);
-        }
+      const data = await res.json();
+      gameId = data.game_id;
+      currentTurn = data.turn;
+      gameOver = false;
+      winline = [];
+      renderBoard(data.board);
+      updateTurn(data.turn);
+
+      if (refreshInterval) clearInterval(refreshInterval);
+      if (mode !== "pvp") {
+        refreshInterval = setInterval(pollGameState, 500);
+      }
     });
 
     async function pollGameState() {
-        if (!gameId || gameOver) return;
-        const res = await fetch(`/state?game_id=${gameId}`);
-        const data = await res.json();
-        if (data.error) {
-            console.error(data.error);
-            return;
-        }
-        renderBoard(data.board, data.winline);
-        updateTurn(data.turn);
-        currentTurn = data.turn;
-        winline = data.winline || [];
-        if (data.winner) {
-            gameOver = true;
-            clearInterval(refreshInterval);
-            alert(data.winner === "draw" ? "It's a draw!" : `Player ${data.winner} wins!`);
-        }
+      if (!gameId || gameOver) return;
+      const res = await fetch(`/state?game_id=${gameId}`);
+      const data = await res.json();
+      if (data.error) {
+        console.error(data.error);
+        return;
+      }
+      renderBoard(data.board, data.winline);
+      updateTurn(data.turn);
+      currentTurn = data.turn;
+      winline = data.winline || [];
+      if (data.winner) {
+        gameOver = true;
+        clearInterval(refreshInterval);
+        alert(data.winner === "draw" ? "It's a draw!" : `Player ${data.winner} wins!`);
+      }
     }
 
     async function cellClick(r, c) {
-        if (!gameId || gameOver) return;
-        // У режимі pve клікувати можна лише тоді, коли хід належить гравцю
-        if (mode !== "pvp" && (mode === "pve" && currentTurn !== document.getElementById("player-symbol").value) || mode === "bvb") return;
-        const res = await fetch("/move", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ game_id: gameId, row: r, col: c })
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        renderBoard(data.board, data.winline);
-        updateTurn(data.turn);
-        currentTurn = data.turn;
-        winline = data.winline || [];
-        if (data.winner) {
-            gameOver = true;
-            clearInterval(refreshInterval);
-            alert(data.winner === "draw" ? "It's a draw!" : `Player ${data.winner} wins!`);
-        }
+      if (!gameId || gameOver) return;
+      if (mode !== "pvp" && ((mode === "pve" && currentTurn !== document.getElementById("player-symbol").value) || mode === "bvb"))
+        return;
+      const res = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ game_id: gameId, row: r, col: c })
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      renderBoard(data.board, data.winline);
+      updateTurn(data.turn);
+      currentTurn = data.turn;
+      winline = data.winline || [];
+      if (data.winner) {
+        gameOver = true;
+        clearInterval(refreshInterval);
+        alert(data.winner === "draw" ? "It's a draw!" : `Player ${data.winner} wins!`);
+      }
     }
 
     function renderBoard(board, winline = []) {
-        const container = document.getElementById("board");
-        container.innerHTML = "";
-        board.forEach((row, r) => {
-            const rowEl = document.createElement("div");
-            rowEl.classList.add("row");
-            row.forEach((cell, c) => {
-                const cellEl = document.createElement("div");
-                cellEl.classList.add("cell");
-                // Якщо позиція (r,c) міститься у winline, додаємо клас highlight
-                if (winline.some(pos => pos[0] === r && pos[1] === c)) {
-                    cellEl.classList.add("highlight");
-                }
-                cellEl.textContent = cell;
-                if (cell === "" && !gameOver && (mode === "pvp" || (mode === "pve" && currentTurn === document.getElementById("player-symbol").value))) {
-                    cellEl.addEventListener("click", () => cellClick(r, c));
-                }
-                rowEl.appendChild(cellEl);
-            });
-            container.appendChild(rowEl);
+      const container = document.getElementById("board");
+      container.innerHTML = "";
+      board.forEach((row, r) => {
+        const rowEl = document.createElement("div");
+        rowEl.classList.add("row");
+        row.forEach((cell, c) => {
+          const cellEl = document.createElement("div");
+          cellEl.classList.add("cell");
+          if (winline.some(pos => pos[0] === r && pos[1] === c)) {
+            cellEl.classList.add("highlight");
+          }
+          cellEl.textContent = cell;
+          if (cell === "" && !gameOver && (mode === "pvp" || (mode === "pve" && currentTurn === document.getElementById("player-symbol").value))) {
+            cellEl.addEventListener("click", () => cellClick(r, c));
+          }
+          rowEl.appendChild(cellEl);
         });
+        container.appendChild(rowEl);
+      });
     }
 
     function updateTurn(turn) {
-        document.getElementById("turn").textContent = `Turn: ${turn}`;
+      document.getElementById("turn").textContent = `Turn: ${turn}`;
     }
-</script>
+  </script>
 </body>
 </html>
