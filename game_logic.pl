@@ -5,21 +5,26 @@
 
     Коментарі до використаних вбудованих предикатів та функторів:
     nth0/3 – стандартний предикат для отримання елемента списку за індексом (нумерація з нуля).
-
     length/2 – визначає довжину списку.
-
     between/3 – генерує числа в заданому діапазоні (вхідні параметри мають бути конкретизованими).
-
     findall/3 – збирає всі рішення заданого запиту в список.
-
     atom_concat/3 – об'єднує два атоми.
-
     atom_chars/2 – перетворює атом у список символів (і навпаки).
-
     random_member/2 – вибирає випадковий елемент зі списку.
-
     sort/3 – сортує список, усуваючи дублікати.
 */
+
+:- module(game_logic, [
+    check_winner/4,
+    get_empty_cells/2,
+    get_active_zone/3,
+    get_lines/4,
+    detect_patterns/7,
+    evaluate_position/6,
+    detect_critical_threat/4,
+    bot_move/5,
+    set_cell/4
+]).
 
 /* ===================== HELPER PREDICATES ===================== */
 
@@ -39,10 +44,9 @@ cell_at(Board, R, C, Value) :-
 /** board_dimensions(++Board, --Rows, --Cols)
     Визначає кількість рядків (Rows) і стовпців (Cols) у Board.
     
-    Приклад:
+    Приклади:
     ?- board_dimensions([[1,2,3],[4,5,6]], Rows, Cols).
-       Rows = 2,
-       Cols = 3.
+       Rows = 2, Cols = 3.
 */
 board_dimensions(Board, Rows, Cols) :-
     length(Board, Rows),
@@ -66,35 +70,48 @@ direction(-1, 1).
 
 /* ===================== WIN CHECKING ===================== */
 
-/** line_in_direction(++Board, ++R, ++C, ++DR, ++DC, ++N, ++Player, --Positions)
-    Визначає позиції Positions (список пар (Row,Col)), починаючи з (R,C) у напрямку (DR,DC)
-    довжиною N, якщо всі комірки рівні Player.
+/** consecutive_positions(++Board, ++R, ++C, ++DR, ++DC, ++Player, --Positions)
+    Рекурсивно збирає позиції Positions (список пар (R,C)), починаючи з (R,C) у напрямку (DR,DC)
+    доти, доки кожна комірка дорівнює Player.
     
     Приклад:
-    ?- line_in_direction([[x,x,x],[o,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, 3, x, Pos).
-       Pos = [(0,0),(0,1),(0,2)].
+    ?- consecutive_positions([[x,x,x,x],[empty,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, x, Pos).
+       Pos = [(0,0),(0,1),(0,2),(0,3)].
 */
-line_in_direction(Board, R, C, DR, DC, N, Player, Positions) :-
-    N1 is N - 1,
-    findall((RR, CC),
-        ( between(0, N1, I),
-          RR is R + I * DR,
-          CC is C + I * DC,
-          cell_at(Board, RR, CC, Val),
-          Val == Player
-        ),
-        Positions
-    ),
-    length(Positions, N).
+consecutive_positions(Board, R, C, DR, DC, Player, [(R, C)|Rest]) :-
+    valid_index(Board, R, C),
+    cell_at(Board, R, C, Val),
+    Val == Player,
+    RNext is R + DR,
+    CNext is C + DC,
+    consecutive_positions(Board, RNext, CNext, DR, DC, Player, Rest), !.
+consecutive_positions(Board, R, C, DR, DC, Player, []) :-
+    ( \+ valid_index(Board, R, C)
+    ; cell_at(Board, R, C, Val), Val \= Player ).
+
+/** line_in_direction(++Board, ++R, ++C, ++DR, ++DC, ++N, ++Player, --WinningPositions)
+    Збирає послідовність позицій для Player у напрямку (DR,DC) починаючи з (R,C),
+    і, якщо кількість зібраних позицій не менша за N, повертає перші N як WinningPositions.
+    
+    Приклад:
+    ?- line_in_direction([[x,x,x,x,x],[empty,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, 3, x, WP).
+       WP = [(0,0),(0,1),(0,2)].
+*/
+line_in_direction(Board, R, C, DR, DC, N, Player, WinningPositions) :-
+    consecutive_positions(Board, R, C, DR, DC, Player, AllPositions),
+    length(AllPositions, L),
+    L >= N,
+    length(WinningPositions, N),
+    append(WinningPositions, _, AllPositions).
 
 /** check_winner(++Board, ++NToWin, --Winner, --WinLine)
-    Знаходить переможця у Board, якщо існує послідовність з NToWin однакових елементів.
-    Якщо Board повністю заповнений і немає переможця, Winner = "draw".
+    Перевіряє, чи існує переможна комбінація з NToWin однакових елементів у Board.
+    Якщо так, повертає Winner та WinLine – список позицій переможної серії.
+    Якщо Board повністю заповнений і переможця немає, повертає Winner = "draw".
     
     Приклад:
     ?- check_winner([[x,x,x],[o,empty,empty],[empty,empty,empty]], 3, W, WL).
-       W = "X",
-       WL = [(0,0),(0,1),(0,2)].
+       W = "X", WL = [(0,0),(0,1),(0,2)].
 */
 check_winner(Board, N, Winner, WinLine) :-
     board_dimensions(Board, Rows, Cols),
@@ -116,7 +133,7 @@ check_winner(Board, _N, "draw", []) :-
 /** get_empty_cells(++Board, --EmptyCells)
     Знаходить усі порожні комірки Board. Результат – список пар (Row,Col).
     
-    Приклад:
+    Приклади:
     ?- get_empty_cells([[x,empty],[o,empty]], EC).
        EC = [(0,1),(1,1)].
 */
@@ -130,9 +147,9 @@ get_empty_cells(Board, EmptyCells) :-
     ).
 
 /** valid_index(++Board, ++R, ++C)
-    Перевіряє, чи індекси (R, C) знаходяться в межах Board.
+    Перевіряє, чи (R,C) є допустимими індексами у Board.
     
-    Приклад:
+    Приклади:
     ?- valid_index([[a,b],[c,d]], 1, 1).
        true.
     ?- valid_index([[a,b],[c,d]], 2, 0).
@@ -144,9 +161,9 @@ valid_index(Board, R, C) :-
     C >= 0, C < Cols.
 
 /** adjacent_non_empty(++Board, ++R, ++C, ++Radius)
-    Перевіряє, чи є принаймні одна непорожня комірка в радіусі Radius від (R, C).
+    Перевіряє, чи є хоча б одна непорожня комірка в радіусі Radius від (R,C).
     
-    Приклад:
+    Приклади:
     ?- adjacent_non_empty([[empty,empty],[x,empty]], 0, 0, 1).
        true.
 */
@@ -163,9 +180,9 @@ adjacent_non_empty(Board, R, C, Radius) :-
     !.
 
 /** get_active_zone(++Board, ++Radius, --ActiveCells)
-    Знаходить усі порожні комірки, які знаходяться поруч із заповненими (в радіусі Radius).
+    Знаходить усі порожні комірки, що знаходяться поруч із заповненими (в радіусі Radius).
     
-    Приклад:
+    Приклади:
     ?- get_active_zone([[empty,empty],[x,empty]], 1, AZ).
        AZ = [(0,0),(0,1),(1,1)].
 */
@@ -183,12 +200,12 @@ get_active_zone(Board, Radius, ActiveCells) :-
 /* ===================== LINE GENERATION FOR PATTERN DETECTION ===================== */
 
 /** get_line(++Board, ++R, ++C, ++DR, ++DC, --Line)
-    Створює атом, що представляє лінію з 11 символів (від -5 до 5) у напрямку (DR, DC),
-    починаючи з (R, C). Символи: '#' (поза межами), '.' (порожньо), 'x' або 'o' (зайнято).
+    Створює атом, що представляє лінію з 11 символів (від -5 до 5) у напрямку (DR,DC)
+    починаючи з (R,C). Символи: '#' (поза межами), '.' (порожньо), 'x' або 'o' (зайнято).
     
-    Приклад:
+    Приклади:
     ?- get_line([[x,x,x],[empty,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, Line).
-       Line = "xxx#######" (наприклад, залежно від положення).
+       Line = "xxx#######" (наприклад).
 */
 get_line(Board, R, C, DR, DC, Line) :-
     MinI is -5, MaxI is 5,
@@ -210,9 +227,9 @@ get_line(Board, R, C, DR, DC, Line) :-
     atom_chars(Line, Chars).
 
 /** get_lines(++Board, ++R, ++C, --Lines)
-    Отримує список ліній (по 4 напрямках) для комірки (R, C).
+    Отримує список ліній (по 4 напрямках) для клітинки (R,C).
     
-    Приклад:
+    Приклади:
     ?- get_lines([[x,empty],[empty,empty]], 0, 0, L).
        L = ["x.", "#.", ...].  % Чотири напрямки.
 */
@@ -227,9 +244,9 @@ get_lines(Board, R, C, Lines) :-
 /* ===================== PATTERN DETECTION ===================== */
 
 /** replicate(++Char, ++Count, --Atom)
-    Повторює символ Char Count разів і повертає результат в Atom.
+    Повторює символ Char Count разів і повертає результат у вигляді Atom.
     
-    Приклад:
+    Приклади:
     ?- replicate(x, 4, A).
        A = "xxxx".
 */
@@ -241,9 +258,9 @@ replicate(Char, N, Atom) :-
     atom_concat(Char, Rest, Atom).
 
 /** patterns(++Player, ++Opponent, --Patterns)
-    Визначає список патернів для заданих Player та Opponent разом з оцінками.
+    Визначає список патернів для заданих Player та Opponent із оцінками.
     
-    Приклад:
+    Приклади:
     ?- patterns(x, o, P).
        P = [("xxxx.",10000), (".xxxx",10000), ("xxx.x",8000), ...].
 */
@@ -271,10 +288,10 @@ patterns(Player, Opponent, Patterns) :-
     ].
 
 /** detect_patterns(++Board, ++R, ++C, ++Player, ++Opponent, ?_N, --Score)
-    Визначає максимальну оцінку Score, яку можна отримати за паттернами для комірки (R,C).
+    Визначає максимальну оцінку Score за паттернами для клітинки (R,C).
     _N не використовується.
     
-    Приклад:
+    Приклади:
     ?- detect_patterns([[x,x,x,empty],[empty,empty,empty,empty],[empty,empty,empty,empty],[empty,empty,empty,empty]], 0, 3, x, o, _N, Score).
        Score = 8000.  % Наприклад, для "xxx.x"
 */
@@ -295,9 +312,9 @@ detect_patterns(Board, R, C, Player, Opponent, _N, Score) :-
 /** evaluate_position(++Board, ++R, ++C, ++Player, ++NToWin, --Score)
     Оцінює позицію (R,C) для Player за допомогою максимального значення з усіх напрямків.
     
-    Приклад:
+    Приклади:
     ?- evaluate_position([[x,empty],[empty,empty]], 0, 0, x, 2, Score).
-       Score = 10.  % Наприклад.
+       Score = 10.
 */
 evaluate_position(Board, R, C, Player, N, Score) :-
     findall(S,
@@ -311,9 +328,9 @@ evaluate_position(Board, R, C, Player, N, Score) :-
 /** evaluate_direction(++Board, ++R, ++C, ++DR, ++DC, ++Player, ++NToWin, --Score)
     Оцінює напрямок (DR,DC) від (R,C) для Player, повертаючи Score як 10^(кількість послідовних фішок), якщо не заблоковано.
     
-    Приклад:
+    Приклади:
     ?- evaluate_direction([[x,x,empty],[empty,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, x, 3, Score).
-       Score = 100.  % Якщо 2 послідовні "x" без блокування.
+       Score = 100.
 */
 evaluate_direction(Board, R, C, DR, DC, Player, _, Score) :-
     count_in_direction(Board, R, C, DR, DC, Player, Count1, Block1),
@@ -325,7 +342,7 @@ evaluate_direction(Board, R, C, DR, DC, Player, _, Score) :-
 /** count_in_direction(++Board, ++R, ++C, ++DR, ++DC, ++Player, --Count, --Blocks)
     Рахує кількість послідовних елементів Player в напрямку (DR,DC) від (R,C).
     
-    Приклад:
+    Приклади:
     ?- count_in_direction([[x,x,empty],[empty,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, x, Count, Blocks).
        Count = 2, Blocks = 0.
 */
@@ -335,7 +352,7 @@ count_in_direction(Board, R, C, DR, DC, Player, Count, Blocks) :-
 /** next_count(++Board, ++R, ++C, ++DR, ++DC, ++Player, ++Acc, --Count, ++BlockAcc, --Blocks)
     Рекурсивно підраховує Count та Blocks у напрямку (DR,DC).
     
-    Приклад:
+    Приклади:
     ?- next_count([[x,x,empty],[empty,empty,empty],[empty,empty,empty]], 0, 0, 0, 1, x, 0, Count, 0, Blocks).
        Count = 2, Blocks = 0.
 */
@@ -360,10 +377,9 @@ next_count(Board, R, C, DR, DC, Player, Acc, Count, BlockAcc, Blocks) :-
 /* ===================== CRITICAL THREAT DETECTION ===================== */
 
 /** detect_critical_threat(++Board, ++Player, ++NToWin, --Move)
-    Якщо розміщення фішки Player у порожній клітинці миттєво приводить до перемоги,
-    повертає цю позицію як Move.
+    Якщо розміщення фішки Player у порожній клітинці миттєво приводить до перемоги, повертає цю позицію як Move.
     
-    Приклад:
+    Приклади:
     ?- detect_critical_threat([[x,x,empty],[o,empty,empty],[empty,empty,empty]], x, 3, Move).
        Move = (0,2).
 */
@@ -380,7 +396,7 @@ detect_critical_threat(Board, Player, N, Move) :-
 /** set_cell(++Board, ++(R,C), ++Player, --NewBoard)
     Повертає NewBoard, який є Board з елементом Player, розміщеним у позиції (R,C).
     
-    Приклад:
+    Приклади:
     ?- set_cell([[x,empty],[empty,empty]], (0,1), x, NB).
        NB = [[x,x],[empty,empty]].
 */
@@ -392,7 +408,7 @@ set_cell(Board, (R, C), Player, NewBoard) :-
 /** replace_nth(++List, ++Index, ++Elem, --NewList)
     Замінює елемент у List на позиції Index на Elem, повертаючи NewList.
     
-    Приклад:
+    Приклади:
     ?- replace_nth([a,b,c], 1, x, NL).
        NL = [a,x,c].
 */
@@ -417,8 +433,8 @@ opponent(x, o).
 opponent(o, x).
 
 /** fix_move(?M, --FixedMove)
-    Гарантує, що M представлено як список [R, C]. Якщо M уже список – повертає його,
-    інакше, якщо воно є термом у вигляді ',(R,C)', перетворює у список.
+    Гарантує, що M представлено як список [R, C]. Якщо M уже список – повертає його, інакше,
+    якщо воно є термом у вигляді ',(R,C)', перетворює у список.
     
     Приклади:
     ?- fix_move((3,5), FM).
@@ -439,7 +455,7 @@ fix_move(M, [R, C]) :-
       - "hard": 2% шанс рандомного ходу, інакше критична загроза, інакше best_move_hard.
     FixedMove – список [R,C].
     
-    Приклад:
+    Приклади:
     ?- bot_move([[empty,empty,empty],[empty,x,empty],[empty,empty,empty]], o, "very easy", 3, Move).
        Move = [0,2].  % Наприклад.
 */
@@ -481,10 +497,9 @@ bot_move(Board, Turn, Difficulty0, N, FixedMove) :-
     fix_move(Move, FixedMove).
 
 /** random_move(++Board, --Move)
-    Вибирає рандомну позицію з активної зони (radius = 4), або, якщо вона порожня,
-    серед усіх порожніх комірок.
+    Вибирає рандомну позицію з активної зони (radius = 4), або, якщо вона порожня, серед усіх порожніх комірок.
     
-    Приклад:
+    Приклади:
     ?- random_move([[empty,x],[empty,empty]], M).
        M = (0,0) ; M = (1,0) ; M = (1,1).
 */
@@ -496,7 +511,7 @@ random_move(Board, Move) :-
 /** best_move(++Board, ++Turn, ++NToWin, --BestMove)
     Для "medium" рівня: вибирає позицію, що максимізує (2*self_score + opp_score).
     
-    Приклад:
+    Приклади:
     ?- best_move([[empty,x,empty],[empty,empty,empty],[empty,empty,empty]], x, 3, BM).
        BM = (0,2).  % Наприклад.
 */
@@ -518,7 +533,7 @@ best_move(Board, Turn, N, BestMove) :-
 /** best_move_hard(++Board, ++Turn, ++NToWin, --BestMove)
     Для "hard" рівня: використовує оцінку патернів * 100 плюс позиційну оцінку.
     
-    Приклад:
+    Приклади:
     ?- best_move_hard([[empty,x,empty],[empty,empty,empty],[empty,empty,empty]], x, 3, BM).
        BM = (0,2).  % Наприклад.
 */

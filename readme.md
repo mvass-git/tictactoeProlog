@@ -18,6 +18,7 @@ SWI-Prolog – Prolog-середовище (завантажте з офіцій
 python -m venv venv
 source venv/bin/activate  # Linux/MacOS
 venv\Scripts\activate     # Windows
+
 Встановіть необхідні пакети:
 
 pip install Flask Flask-CORS pyswip

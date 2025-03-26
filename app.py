@@ -44,6 +44,46 @@ def convert_board_from_prolog(board):
         py_board.append(py_row)
     return py_board
 
+def convert_winline(winline):
+    """
+    Convert winline (list of winning positions returned from Prolog)
+    into a list of lists of integers.
+    
+    Expected winline format: each position is returned as a list of characters 
+    representing a term like [',','(','3',',',' ','1',')'].
+    This function joins the characters into a string, removes punctuation, 
+    splits on whitespace, and converts the resulting parts into integers.
+    
+    Example:
+      Input: [[',','(','3',',',' ','1',')'], [',','(','3',',',' ','2',')']]
+      Output: [[3, 1], [3, 2]]
+    """
+    if isinstance(winline, list):
+        new_winline = []
+        for pos in winline:
+            # If pos is a list of characters, join them into a string.
+            if isinstance(pos, list):
+                s = ''.join(pos)
+            else:
+                s = str(pos)
+            # Remove any leading/trailing whitespace.
+            s = s.strip()
+            # Remove punctuation characters: comma, '(', ')'
+            for ch in [',', '(', ')']:
+                s = s.replace(ch, '')
+            # Now split the string by whitespace.
+            parts = s.split()
+            try:
+                numbers = [int(x) for x in parts]
+                new_winline.append(numbers)
+            except Exception as e:
+                print("Error converting winline position:", e)
+                new_winline.append(s)
+        print("Converted winline:", new_winline)
+        return new_winline
+    print("winline is not a list:", winline)
+    return winline
+
 def check_winner(board, n_to_win):
     prolog_board = convert_board_to_prolog(board)
     query = f'check_winner({prolog_board}, {n_to_win}, Winner, WinLine).'
@@ -53,19 +93,27 @@ def check_winner(board, n_to_win):
         if isinstance(winner, bytes):
             winner = winner.decode("utf-8")
         winline = result[0]["WinLine"]
+        winline = convert_winline(winline)
         return winner, winline
     return None, []
 
 def apply_bot_move(game_id, r, c):
     game = games[game_id]
-    game["board"][r][c] = game["turn"]
+    # For pvp and bvb modes use the current symbol, for pve bot uses its own symbol.
+    if game["mode"] in ["pvp", "bvb"]:
+        game["board"][r][c] = game["turn"]
+    else:
+        game["board"][r][c] = game["bot_symbol"]
     winner, winline = check_winner(game["board"], game["settings"]["n_to_win"])
     if winner:
         game["winner"] = winner
         game["winline"] = winline
     else:
-        # Switch turn and, for bot-vs-bot mode, schedule the next bot move.
-        game["turn"] = "O" if game["turn"] == "X" else "X"
+        # Change turn:
+        if game["mode"] in ["pvp", "bvb"]:
+            game["turn"] = "O" if game["turn"] == "X" else "X"
+        else:
+            game["turn"] = game["player_symbol"] if game["turn"] == game["bot_symbol"] else game["bot_symbol"]
         if game["mode"] == "bvb":
             threading.Thread(target=lambda: make_bot_move(game_id)).start()
 
@@ -84,8 +132,12 @@ def make_bot_move(game_id):
     result = list(prolog.query(query, maxresult=1))
     print("Bot move result:", result)
     if result:
-        move = result[0]["Move"]  # Expected to be a tuple (Row, Col)
-        r_move, c_move = move
+        move = result[0]["Move"]  # Expected to be a list [Row, Col]
+        try:
+            r_move, c_move = move
+        except Exception as e:
+            print("Error unpacking move:", e)
+            return
         apply_bot_move(game_id, r_move, c_move)
 
 @app.route("/")
@@ -101,13 +153,22 @@ def start_game():
     data = request.json
     board = [["" for _ in range(data["cols"])] for _ in range(data["rows"])]
     game_id = str(len(games) + 1)
+    # For pve mode, player selects a symbol; for pvp/bvb, default to X for first turn.
+    if data["mode"] in ["pvp", "bvb"]:
+        player_symbol = "X"
+        bot_symbol = "O"
+    else:
+        player_symbol = data.get("player_symbol", "X")
+        bot_symbol = "O" if player_symbol == "X" else "X"
     game = {
         "id": game_id,
         "board": board,
-        "turn": "X",
+        "turn": "X",  # default: "X" starts
         "winner": None,
         "winline": [],
         "mode": data["mode"],
+        "player_symbol": player_symbol,
+        "bot_symbol": bot_symbol,
         "settings": {
             "bot_delay": data["bot_delay"],
             "bot_difficulty": data["bot_difficulty"],
@@ -115,9 +176,12 @@ def start_game():
         }
     }
     games[game_id] = game
-    if data["mode"] == "bvb":
+    # For pve, if initial turn is bot's, trigger bot move
+    if game["mode"] == "pve" and game["turn"] == game["bot_symbol"]:
         threading.Thread(target=lambda: make_bot_move(game_id)).start()
-    return jsonify({"game_id": game_id, "board": board, "turn": "X"})
+    if game["mode"] == "bvb":
+        threading.Thread(target=lambda: make_bot_move(game_id)).start()
+    return jsonify({"game_id": game_id, "board": board, "turn": game["turn"]})
 
 @app.route("/move", methods=["POST"])
 def move():
@@ -129,15 +193,21 @@ def move():
     r, c = data["row"], data["col"]
     if game["board"][r][c] != "" or game["winner"]:
         return jsonify({"error": "Invalid move"}), 400
-    game["board"][r][c] = game["turn"]
+    if game["mode"] == "pve":
+        game["board"][r][c] = game["player_symbol"]
+    else:
+        game["board"][r][c] = game["turn"]
     winner, winline = check_winner(game["board"], game["settings"]["n_to_win"])
     if winner:
         game["winner"] = winner
         game["winline"] = winline
     else:
-        game["turn"] = "O" if game["turn"] == "X" else "X"
-        if game["mode"] == "pve" and game["turn"] == "O":
-            threading.Thread(target=lambda: make_bot_move(game_id)).start()
+        if game["mode"] == "pve":
+            game["turn"] = game["bot_symbol"] if game["turn"] == game["player_symbol"] else game["player_symbol"]
+            if game["turn"] == game["bot_symbol"]:
+                threading.Thread(target=lambda: make_bot_move(game_id)).start()
+        else:
+            game["turn"] = "O" if game["turn"] == "X" else "X"
     return jsonify({"board": game["board"], "turn": game["turn"], "winner": game["winner"], "winline": game.get("winline", [])})
 
 @app.route("/state", methods=["GET"])

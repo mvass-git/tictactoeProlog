@@ -44,8 +44,9 @@
         .cell:active {
             background-color: #ddd;
         }
+        /* Підсвічування переможної серії */
         .cell.highlight {
-            background-color: #ffeb3b;
+            background-color: #8f8; /* світло-зелений фон */
             font-weight: bold;
         }
     </style>
@@ -61,6 +62,13 @@
             <option value="pvp">Player vs Player</option>
             <option value="pve">Player vs Bot</option>
             <option value="bvb">Bot vs Bot</option>
+        </select>
+    </label>
+    <!-- Вибір символу гравця використовується лише для режиму pve -->
+    <label>Player Symbol:
+        <select id="player-symbol">
+            <option value="X">X</option>
+            <option value="O">O</option>
         </select>
     </label>
     <label>Bot Delay (ms): <input type="number" id="bot-delay" value="200"></label>
@@ -94,6 +102,7 @@
         const botDelay = parseInt(document.getElementById("bot-delay").value);
         const botDifficulty = document.getElementById("bot-difficulty").value;
         const nToWin = parseInt(document.getElementById("n-to-win").value);
+        const playerSymbol = document.getElementById("player-symbol").value;
 
         const res = await fetch("/start", {
             method: "POST",
@@ -102,7 +111,8 @@
                 rows, cols, mode,
                 bot_delay: botDelay,
                 bot_difficulty: botDifficulty,
-                n_to_win: nToWin
+                n_to_win: nToWin,
+                player_symbol: playerSymbol
             })
         });
 
@@ -141,7 +151,8 @@
 
     async function cellClick(r, c) {
         if (!gameId || gameOver) return;
-        if (mode !== "pvp" && ((mode === "pve" && currentTurn === "O") || mode === "bvb")) return;
+        // У режимі pve клікувати можна лише тоді, коли хід належить гравцю
+        if (mode !== "pvp" && (mode === "pve" && currentTurn !== document.getElementById("player-symbol").value) || mode === "bvb") return;
         const res = await fetch("/move", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -169,11 +180,12 @@
             row.forEach((cell, c) => {
                 const cellEl = document.createElement("div");
                 cellEl.classList.add("cell");
+                // Якщо позиція (r,c) міститься у winline, додаємо клас highlight
                 if (winline.some(pos => pos[0] === r && pos[1] === c)) {
                     cellEl.classList.add("highlight");
                 }
                 cellEl.textContent = cell;
-                if (cell === "" && !gameOver && (mode === "pvp" || (mode === "pve" && currentTurn === "X"))) {
+                if (cell === "" && !gameOver && (mode === "pvp" || (mode === "pve" && currentTurn === document.getElementById("player-symbol").value))) {
                     cellEl.addEventListener("click", () => cellClick(r, c));
                 }
                 rowEl.appendChild(cellEl);
